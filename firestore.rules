@@ -1,108 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    function isAdmin() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    
-    function isBusiness() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'business';
-    }
-    
-    function isCustomer() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'customer';
-    }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    // Users collection
+    // Users collection - users can read/write their own data
     match /users/{userId} {
-      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      allow create: if isAuthenticated() && isOwner(userId);
-      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Categories collection - Read by all, write by admin only
-    match /categories/{categoryId} {
-      allow read: if true; // Public read access
-      allow write: if isAuthenticated() && isAdmin();
-    }
-    
-    // Subcategories collection - Read by all, write by admin only
-    match /subcategories/{subcategoryId} {
-      allow read: if true; // Public read access
-      allow write: if isAuthenticated() && isAdmin();
-    }
-    
-    // Sub-subcategories collection - Read by all, write by admin only
-    match /subSubcategories/{subSubcategoryId} {
-      allow read: if true; // Public read access
-      allow write: if isAuthenticated() && isAdmin();
-    }
-    
-    // Business applications - Create by customers, read/write by admin
-    match /businessApplications/{applicationId} {
-      allow read: if isAuthenticated() && (isAdmin() || 
-        resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && isCustomer();
-      allow update: if isAuthenticated() && isAdmin();
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-    
-    // Businesses collection - Read by all, write by admin only
-    match /businesses/{businessId} {
-      allow read: if true; // Public read access
-      allow write: if isAuthenticated() && isAdmin();
-    }
-    
-    // Reviews collection - Read by all, create by customers, update by owner or admin
-    match /reviews/{reviewId} {
-      allow read: if true; // Public read access
-      allow create: if isAuthenticated() && isCustomer();
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.userId == request.auth.uid
-      );
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-    
-    // Business upgrade requests (existing from auth system)
+    // Business upgrade requests - users can create, admins can read all
     match /businessUpgradeRequests/{requestId} {
-      allow read: if isAuthenticated() && (isAdmin() || 
-        resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && isCustomer();
-      allow update: if isAuthenticated() && isAdmin();
-      allow delete: if isAuthenticated() && isAdmin();
+      allow create: if request.auth != null;
+      allow read, write: if request.auth != null && 
+        (request.auth.uid == resource.data.userId || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
     
-    // Admin stats - Admin only
-    match /adminStats/{statsId} {
-      allow read, write: if isAuthenticated() && isAdmin();
+    // Businesses collection - business owners can manage their own data
+    match /businesses/{businessId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.ownerId == request.auth.uid || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
     
-    // System settings - Admin only
-    match /settings/{settingId} {
-      allow read, write: if isAuthenticated() && isAdmin();
+    // Gift cards - business owners can manage their own cards, customers can read
+    match /giftCards/{cardId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        (resource.data.businessId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessProfile.businessId || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
     
-    // Deny all other access
-    match /{document=**} {
-      allow read, write: if false;
+    // Orders - users can read their own orders, business owners can read their business orders
+    match /orders/{orderId} {
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         resource.data.businessId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessProfile.businessId ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow create: if request.auth != null;
     }
   }
 } 

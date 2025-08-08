@@ -1,0 +1,237 @@
+-- PostgreSQL Database Schema for Testing (No RLS)
+-- This schema replaces Firestore collections with PostgreSQL tables
+
+-- Users table (replaces Firestore users collection)
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY, -- Firebase UID
+    email TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    photo_url TEXT,
+    phone_number TEXT,
+    role TEXT NOT NULL CHECK (role IN ('customer', 'business', 'admin')),
+    user_code TEXT NOT NULL UNIQUE,
+    is_email_verified BOOLEAN DEFAULT FALSE,
+    business_profile JSONB, -- For business upgrade requests
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Categories table (replaces Firestore categories collection)
+CREATE TABLE IF NOT EXISTS categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    description TEXT,
+    seo_title TEXT,
+    seo_description TEXT,
+    seo_keywords TEXT[],
+    banner_image TEXT,
+    rounded_image TEXT,
+    square_image TEXT,
+    card_image TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_featured BOOLEAN DEFAULT FALSE,
+    "order" INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by TEXT REFERENCES users(id)
+);
+
+-- Subcategories table (replaces Firestore subcategories collection)
+CREATE TABLE IF NOT EXISTS subcategories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    description TEXT,
+    seo_title TEXT,
+    seo_description TEXT,
+    seo_keywords TEXT[],
+    banner_image TEXT,
+    rounded_image TEXT,
+    square_image TEXT,
+    card_image TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_featured BOOLEAN DEFAULT FALSE,
+    "order" INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by TEXT REFERENCES users(id)
+);
+
+-- Sub-subcategories table (replaces Firestore subSubcategories collection)
+CREATE TABLE IF NOT EXISTS sub_subcategories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subcategory_id UUID REFERENCES subcategories(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    description TEXT,
+    seo_title TEXT,
+    seo_description TEXT,
+    seo_keywords TEXT[],
+    banner_image TEXT,
+    rounded_image TEXT,
+    square_image TEXT,
+    card_image TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_featured BOOLEAN DEFAULT FALSE,
+    "order" INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by TEXT REFERENCES users(id)
+);
+
+-- Business applications table (replaces Firestore businessApplications collection)
+CREATE TABLE IF NOT EXISTS business_applications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    user_email TEXT NOT NULL,
+    user_name TEXT NOT NULL,
+    business_name TEXT NOT NULL,
+    business_type TEXT NOT NULL,
+    industry TEXT NOT NULL,
+    description TEXT,
+    year_established INTEGER,
+    website TEXT,
+    business_phone TEXT,
+    business_email TEXT,
+    contact_name TEXT NOT NULL,
+    contact_title TEXT,
+    contact_phone TEXT,
+    contact_email TEXT,
+    alternative_contact TEXT,
+    location_name TEXT,
+    street_address TEXT,
+    city TEXT,
+    state TEXT,
+    zip_code TEXT,
+    country TEXT,
+    business_hours JSONB,
+    has_multiple_locations BOOLEAN DEFAULT FALSE,
+    primary_category TEXT,
+    subcategories TEXT[],
+    additional_categories TEXT[],
+    employee_count TEXT,
+    revenue_range TEXT,
+    target_customers TEXT[],
+    specializations TEXT[],
+    license_number TEXT,
+    tax_id TEXT,
+    documents JSONB,
+    social_media JSONB,
+    business_photos TEXT[],
+    logo TEXT,
+    terms_accepted BOOLEAN DEFAULT FALSE,
+    privacy_accepted BOOLEAN DEFAULT FALSE,
+    data_consent_accepted BOOLEAN DEFAULT FALSE,
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    admin_notes TEXT,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    reviewed_by TEXT REFERENCES users(id),
+    reviewed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Businesses table (replaces Firestore businesses collection)
+CREATE TABLE IF NOT EXISTS businesses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    application_id UUID REFERENCES business_applications(id),
+    business_name TEXT NOT NULL,
+    category_id UUID REFERENCES categories(id),
+    subcategory_id UUID REFERENCES subcategories(id),
+    sub_subcategory_id UUID REFERENCES sub_subcategories(id),
+    description TEXT,
+    logo TEXT,
+    banner_image TEXT,
+    square_image TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_verified BOOLEAN DEFAULT FALSE,
+    verification_date TIMESTAMP WITH TIME ZONE,
+    verified_by TEXT REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    owner_id TEXT REFERENCES users(id)
+);
+
+-- Reviews table (replaces Firestore reviews collection)
+CREATE TABLE IF NOT EXISTS reviews (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    comment TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Admin stats table (replaces Firestore adminStats collection)
+CREATE TABLE IF NOT EXISTS admin_stats (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stat_name TEXT NOT NULL UNIQUE,
+    stat_value JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Settings table (replaces Firestore settings collection)
+CREATE TABLE IF NOT EXISTS settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    setting_name TEXT NOT NULL UNIQUE,
+    setting_value JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories(slug);
+CREATE INDEX IF NOT EXISTS idx_categories_order ON categories("order");
+CREATE INDEX IF NOT EXISTS idx_subcategories_category_id ON subcategories(category_id);
+CREATE INDEX IF NOT EXISTS idx_sub_subcategories_subcategory_id ON sub_subcategories(subcategory_id);
+CREATE INDEX IF NOT EXISTS idx_business_applications_user_id ON business_applications(user_id);
+CREATE INDEX IF NOT EXISTS idx_business_applications_status ON business_applications(status);
+CREATE INDEX IF NOT EXISTS idx_businesses_owner_id ON businesses(owner_id);
+CREATE INDEX IF NOT EXISTS idx_businesses_category_id ON businesses(category_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_business_id ON reviews(business_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_user_id ON reviews(user_id);
+
+-- Create function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Create triggers for updated_at
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_categories_updated_at BEFORE UPDATE ON categories
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_subcategories_updated_at BEFORE UPDATE ON subcategories
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_sub_subcategories_updated_at BEFORE UPDATE ON sub_subcategories
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_businesses_updated_at BEFORE UPDATE ON businesses
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_reviews_updated_at BEFORE UPDATE ON reviews
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_admin_stats_updated_at BEFORE UPDATE ON admin_stats
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_settings_updated_at BEFORE UPDATE ON settings
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Insert sample data for testing
+INSERT INTO categories (name, slug, description, seo_title, seo_description, seo_keywords, is_active, is_featured, "order") VALUES
+('Restaurants', 'restaurants', 'Discover amazing dining experiences', 'Best Restaurants - Gift Cards & Dining', 'Find the perfect restaurant gift cards for food lovers', ARRAY['restaurants', 'dining', 'food', 'gift cards', 'fine dining'], true, true, 1),
+('Retail', 'retail', 'Shop your favorite stores', 'Retail Gift Cards - Shopping & Fashion', 'Gift cards for your favorite retail stores and fashion brands', ARRAY['retail', 'shopping', 'fashion', 'clothing', 'gift cards'], true, true, 2),
+('Services', 'services', 'Professional services and experiences', 'Service Gift Cards - Beauty, Spa & More', 'Gift cards for beauty, spa, fitness and professional services', ARRAY['services', 'beauty', 'spa', 'fitness', 'gift cards'], true, false, 3)
+ON CONFLICT (slug) DO NOTHING;
