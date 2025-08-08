@@ -1,6 +1,0 @@
-{
-  "buildCommand": "cd gift-app && npm run build",
-  "outputDirectory": "gift-app/.next",
-  "installCommand": "cd gift-app && npm install",
-  "framework": "nextjs"
-}
