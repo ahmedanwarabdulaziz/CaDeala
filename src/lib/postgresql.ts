@@ -162,7 +162,6 @@ export interface DatabaseBusinessApplication {
   reviewed_at?: string;
 }
 
-// PostgreSQL Database Service
 export class PostgreSQLService {
   // Users
   static async createUser(userData: Omit<DatabaseUser, 'created_at' | 'updated_at'>): Promise<void> {
@@ -185,31 +184,24 @@ export class PostgreSQLService {
     if (!supabase) {
       throw new Error('Supabase client not initialized. Check environment variables.');
     }
-    
-    // Check if user already exists
     const { data: existingUser } = await supabase
       .from('users')
       .select('id')
       .eq('id', firebaseUser.uid)
       .single();
-    
     if (existingUser) {
-      // User already exists, no need to sync
-      return;
+      return; // User already exists
     }
-    
-    // Create user in PostgreSQL
     const userData = {
       id: firebaseUser.uid,
       email: firebaseUser.email || '',
       display_name: firebaseUser.displayName || null,
       photo_url: firebaseUser.photoURL || null,
       phone_number: firebaseUser.phoneNumber || null,
-      role: 'customer' as const, // Default role, can be updated later
-      user_code: `USER_${Date.now()}`, // Generate a unique user code
+      role: 'customer' as const, // Default role
+      user_code: `USER_${Date.now()}`, // Generate unique code
       is_email_verified: firebaseUser.emailVerified || false
     };
-    
     await this.createUser(userData);
   }
 
@@ -253,7 +245,7 @@ export class PostgreSQLService {
     const { data, error } = await supabase
       .from('categories')
       .select('*')
-      .order('order');
+      .order('order', { ascending: true });
     
     if (error) throw error;
     return data || [];
@@ -289,14 +281,7 @@ export class PostgreSQLService {
       .select('id')
       .single();
     
-    if (error) {
-      console.error('Supabase error:', error);
-      if (error.code === '23505') {
-        throw new Error('A category with this slug already exists. Please choose a different slug.');
-      } else {
-        throw new Error(`Database error: ${error.message}`);
-      }
-    }
+    if (error) throw error;
     return data.id;
   }
 
@@ -368,17 +353,11 @@ export class PostgreSQLService {
       throw new Error('Supabase client not initialized. Check environment variables.');
     }
     
-    // Update each subcategory's order
-    for (let i = 0; i < subcategories.length; i++) {
-      const { error } = await supabase
+    for (const subcategory of subcategories) {
+      await supabase
         .from('subcategories')
-        .update({
-          order: i + 1,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', subcategories[i].id);
-      
-      if (error) throw error;
+        .update({ order: subcategory.order })
+        .eq('id', subcategory.id);
     }
   }
 
@@ -421,43 +400,19 @@ export class PostgreSQLService {
       throw new Error('Supabase client not initialized. Check environment variables.');
     }
     
-    try {
-      // Get total users
-      const { count: totalUsers } = await supabase
-        .from('users')
-        .select('*', { count: 'exact', head: true });
-      
-      // Get total businesses
-      const { count: totalBusinesses } = await supabase
-        .from('businesses')
-        .select('*', { count: 'exact', head: true });
-      
-      // Get pending applications
-      const { count: pendingApplications } = await supabase
-        .from('business_applications')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending');
-      
-      // Get total categories
-      const { count: totalCategories } = await supabase
-        .from('categories')
-        .select('*', { count: 'exact', head: true });
-      
-      return {
-        totalUsers: totalUsers || 0,
-        totalBusinesses: totalBusinesses || 0,
-        pendingApplications: pendingApplications || 0,
-        totalCategories: totalCategories || 0
-      };
-    } catch (error) {
-      console.error('Error getting admin stats:', error);
-      return {
-        totalUsers: 0,
-        totalBusinesses: 0,
-        pendingApplications: 0,
-        totalCategories: 0
-      };
-    }
+    const [usersResult, businessesResult, applicationsResult, categoriesResult] = await Promise.all([
+      supabase.from('users').select('id', { count: 'exact' }),
+      supabase.from('businesses').select('id', { count: 'exact' }),
+      supabase.from('business_applications').select('id', { count: 'exact' }).eq('status', 'pending'),
+      supabase.from('categories').select('id', { count: 'exact' })
+    ]);
+    
+    return {
+      totalUsers: usersResult.count || 0,
+      totalBusinesses: businessesResult.count || 0,
+      pendingApplications: applicationsResult.count || 0,
+      totalCategories: categoriesResult.count || 0
+    };
   }
 
   // Business Applications
