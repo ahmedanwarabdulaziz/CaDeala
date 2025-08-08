@@ -1,0 +1,96 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isCustomer() {
+      return isAuthenticated() && 
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'customer';
+    }
+    
+    function isValidImage() {
+      return request.resource.contentType.matches('image/.*') &&
+             request.resource.size < 10 * 1024 * 1024; // 10MB max
+    }
+    
+    function isValidImageFormat() {
+      return request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    }
+    
+    function isValidDocument() {
+      return request.resource.contentType.matches('application/(pdf|msword|vnd.openxmlformats-officedocument.wordprocessingml.document)') &&
+             request.resource.size < 20 * 1024 * 1024; // 20MB max
+    }
+    
+    // Categories images - Admin only
+    match /categories/{categoryId}/{imageType} {
+      allow read: if true; // Public read access
+      allow write: if isAuthenticated() && isAdmin() && 
+        isValidImage() && isValidImageFormat() &&
+        imageType.matches('(banner|rounded|square)');
+    }
+    
+    // Subcategories images - Admin only
+    match /subcategories/{subcategoryId}/{imageType} {
+      allow read: if true; // Public read access
+      allow write: if isAuthenticated() && isAdmin() && 
+        isValidImage() && isValidImageFormat() &&
+        imageType.matches('(banner|rounded|square)');
+    }
+    
+    // Sub-subcategories images - Admin only
+    match /subSubcategories/{subSubcategoryId}/{imageType} {
+      allow read: if true; // Public read access
+      allow write: if isAuthenticated() && isAdmin() && 
+        isValidImage() && isValidImageFormat() &&
+        imageType.matches('(banner|rounded|square)');
+    }
+    
+    // Business images - Admin only
+    match /businesses/{businessId}/{imageType} {
+      allow read: if true; // Public read access
+      allow write: if isAuthenticated() && isAdmin() && 
+        isValidImage() && isValidImageFormat() &&
+        imageType.matches('(logo|banner|square)');
+    }
+    
+    // Business application files - Customers can upload, admin can manage
+    match /business-applications/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || 
+        request.auth.uid == userId
+      );
+      allow write: if isAuthenticated() && 
+        request.auth.uid == userId &&
+        (
+          // Allow documents (PDF, DOC, etc.)
+          isValidDocument() ||
+          // Allow images
+          (request.resource.contentType.matches('image/.*') && isValidImageFormat() && isValidImage())
+        )
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+    
+    // User profile images
+    match /users/{userId}/profile.jpg {
+      allow read: if true; // Public read access
+      allow write: if isAuthenticated() && 
+        request.auth.uid == userId && 
+        isValidImage() && isValidImageFormat();
+    }
+    
+    // Deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+} 
