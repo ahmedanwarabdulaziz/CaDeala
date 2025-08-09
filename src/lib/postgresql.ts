@@ -32,6 +32,9 @@ export interface DatabaseUser {
   is_email_verified: boolean;
   created_at: string;
   updated_at: string;
+  customer_type?: 'public' | 'business_specific';
+  registering_business_id?: string;
+  access_level?: 'exclusive' | 'cross_business' | 'public';
   business_profile?: {
     business_id: string;
     business_name: string;
@@ -99,6 +102,145 @@ export interface DatabaseBusiness {
   created_at: string;
   updated_at: string;
   owner_id: string; // Firebase UID
+}
+
+export interface DatabaseBusinessService {
+  id: string;
+  business_id: string;
+  name: string;
+  description: string;
+  original_price: number;
+  discount_price: number;
+  discount_percentage: number;
+  service_type: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabaseGiftCard {
+  id: string;
+  business_id: string;
+  service_id?: string;
+  name: string;
+  description: string;
+  card_price: number;
+  original_value: number;
+  discount_value: number;
+  card_type: 'dead_hour' | 'regular' | 'promotional';
+  validity_hours: number;
+  max_purchases?: number;
+  current_purchases: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabaseGiftCardAvailability {
+  id: string;
+  gift_card_id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface DatabaseGiftCardPurchase {
+  id: string;
+  gift_card_id: string;
+  customer_id: string;
+  business_id: string;
+  purchase_amount: number;
+  card_value: number;
+  qr_code: string;
+  status: 'active' | 'used' | 'expired' | 'cancelled';
+  purchased_at: string;
+  expires_at: string;
+  used_at?: string;
+  created_at: string;
+}
+
+export interface DatabaseGiftCardRedemption {
+  id: string;
+  purchase_id: string;
+  business_id: string;
+  customer_id: string;
+  redeemed_by?: string;
+  redemption_amount: number;
+  notes?: string;
+  redeemed_at: string;
+  created_at: string;
+}
+
+// Add new interfaces for post-purchase registration system
+export interface DatabaseCustomerRegistration {
+  id: string;
+  customer_id: string;
+  business_id: string;
+  registration_method: 'qr_code' | 'link' | 'app';
+  purchase_amount?: number;
+  purchase_details?: any;
+  points_awarded: number;
+  welcome_gift_awarded: boolean;
+  registration_data?: any;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabaseBusinessRegistrationLink {
+  id: string;
+  business_id: string;
+  unique_code: string;
+  qr_code_url?: string;
+  landing_page_url?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabaseBusinessRewardConfig {
+  id: string;
+  business_id: string;
+  reward_type: 'points' | 'discount' | 'gift_card' | 'free_service';
+  points_per_dollar: number;
+  welcome_points: number;
+  welcome_discount_percent?: number;
+  welcome_gift_card_amount?: number;
+  welcome_free_service?: string;
+  is_automatic: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabaseCustomerPoints {
+  id: string;
+  customer_id: string;
+  business_id: string;
+  points: number;
+  total_earned: number;
+  total_redeemed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatabasePointsTransaction {
+  id: string;
+  customer_id: string;
+  business_id: string;
+  transaction_type: 'earned' | 'redeemed' | 'expired';
+  points: number;
+  description?: string;
+  reference_id?: string;
+  created_at: string;
+}
+
+export interface DatabaseBusinessStats {
+  totalCards: number;
+  activeCards: number;
+  totalSales: number;
+  totalCustomers: number;
 }
 
 export interface DatabaseBusinessApplication {
@@ -214,7 +356,7 @@ export class PostgreSQLService {
       .from('users')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
     
     if (error) throw error;
     return data;
@@ -260,7 +402,7 @@ export class PostgreSQLService {
       .from('categories')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
     
     if (error) throw error;
     return data;
@@ -491,6 +633,84 @@ export class PostgreSQLService {
     if (error) throw error;
   }
 
+  // Method to sync user roles for approved business applications
+  static async syncUserRolesForApprovedBusinesses(): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    try {
+      // Get all approved business applications
+      const { data: approvedApplications, error: applicationsError } = await supabase
+        .from('business_applications')
+        .select('*')
+        .eq('status', 'approved');
+      
+      if (applicationsError) throw applicationsError;
+      
+      if (approvedApplications && approvedApplications.length > 0) {
+        // Get all users with these user_ids
+        const userIds = approvedApplications.map(app => app.user_id);
+        const { data: users, error: usersError } = await supabase
+          .from('users')
+          .select('id, role')
+          .in('id', userIds);
+        
+        if (usersError) throw usersError;
+        
+        // Update users who don't have 'business' role
+        const usersToUpdate = users?.filter(user => user.role !== 'business') || [];
+        
+        for (const user of usersToUpdate) {
+          await this.updateUser(user.id, { role: 'business' });
+          console.log(`Updated user ${user.id} role to 'business'`);
+        }
+        
+        // Check for approved applications that don't have business records
+        for (const application of approvedApplications) {
+          // Check if business record exists for this application
+          const { data: existingBusiness, error: businessCheckError } = await supabase
+            .from('businesses')
+            .select('id')
+            .eq('application_id', application.id)
+            .maybeSingle();
+          
+          if (businessCheckError) {
+            console.error('Error checking for existing business:', businessCheckError);
+            continue;
+          }
+          
+          // If no business record exists, create one
+          if (!existingBusiness) {
+            const businessData = {
+              application_id: application.id,
+              business_name: application.business_name,
+              category_id: application.primary_category,
+              subcategory_id: application.subcategories?.[0] || null,
+              description: application.description,
+              logo: application.logo || '',
+              banner_image: application.business_photos?.[0] || '',
+              square_image: application.business_photos?.[0] || '',
+              is_active: true,
+              is_verified: true,
+              verification_date: new Date().toISOString(),
+              verified_by: application.reviewed_by,
+              owner_id: application.user_id
+            };
+            
+            await this.createBusiness(businessData);
+            console.log(`Created business record for approved application ${application.id}`);
+          }
+        }
+        
+        console.log(`Synced ${usersToUpdate.length} user roles and created business records for approved businesses`);
+      }
+    } catch (error) {
+      console.error('Error syncing user roles for approved businesses:', error);
+      throw error;
+    }
+  }
+
   // Businesses
   static async createBusiness(businessData: Omit<DatabaseBusiness, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
     if (!supabase) {
@@ -534,10 +754,664 @@ export class PostgreSQLService {
       .from('businesses')
       .select('*')
       .eq('owner_id', ownerId)
-      .single();
+      .maybeSingle();
     
     if (error) throw error;
     return data;
+  }
+
+  // Business Services
+  static async createBusinessService(serviceData: Omit<DatabaseBusinessService, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    const { data, error } = await supabase
+      .from('business_services')
+      .insert({
+        ...serviceData,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select('id')
+      .single();
+    
+    if (error) throw error;
+    return data.id;
+  }
+
+  static async getBusinessServices(businessId: string): Promise<DatabaseBusinessService[]> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    // Check if business_services table exists first
+    try {
+      const { data, error } = await supabase
+        .from('business_services')
+        .select('id')
+        .limit(1);
+      
+      if (error) {
+        console.log('Business services table error:', error);
+        // If it's a permission error, the table exists but we can't access it
+        if (error.code === '42501' || error.code === 'PGRST116') {
+          console.log('Business services table exists but access is restricted (RLS enabled)');
+          return [];
+        }
+        console.log('Business services table does not exist, returning empty array');
+        return [];
+      }
+    } catch (error) {
+      console.log('Business services table does not exist, returning empty array');
+      return [];
+    }
+    
+    const { data, error } = await supabase
+      .from('business_services')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching business services:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  // Gift Cards
+  static async createGiftCard(giftCardData: {
+    business_id: string;
+    service_id?: string;
+    name: string;
+    description: string;
+    card_price: number;
+    original_value: number;
+    discount_value: number;
+    card_type: 'dead_hour' | 'regular' | 'promotional';
+    validity_hours: number;
+    max_purchases?: number;
+    time_slots: Array<{
+      day_of_week: number;
+      start_time: string;
+      end_time: string;
+    }>;
+  }): Promise<string> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    // Create gift card
+    const { data: giftCard, error: giftCardError } = await supabase
+      .from('gift_cards')
+      .insert({
+        business_id: giftCardData.business_id,
+        service_id: giftCardData.service_id,
+        name: giftCardData.name,
+        description: giftCardData.description,
+        card_price: giftCardData.card_price,
+        original_value: giftCardData.original_value,
+        discount_value: giftCardData.discount_value,
+        card_type: giftCardData.card_type,
+        validity_hours: giftCardData.validity_hours,
+        max_purchases: giftCardData.max_purchases,
+        current_purchases: 0,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select('id')
+      .single();
+    
+    if (giftCardError) throw giftCardError;
+
+    // Create time slots
+    if (giftCardData.time_slots.length > 0) {
+      const timeSlots = giftCardData.time_slots.map(slot => ({
+        gift_card_id: giftCard.id,
+        day_of_week: slot.day_of_week,
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        is_active: true,
+        created_at: new Date().toISOString()
+      }));
+
+      const { error: timeSlotsError } = await supabase
+        .from('gift_card_availability')
+        .insert(timeSlots);
+      
+      if (timeSlotsError) throw timeSlotsError;
+    }
+    
+    return giftCard.id;
+  }
+
+  static async checkGiftCardTablesExist(): Promise<boolean> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    try {
+      // Try to query the gift_cards table with a simple select
+      const { data, error } = await supabase
+        .from('gift_cards')
+        .select('id')
+        .limit(1);
+      
+      if (error) {
+        console.error('Gift cards table error:', error);
+        // If it's a permission error, the table exists but we can't access it
+        if (error.code === '42501' || error.code === 'PGRST116') {
+          console.log('Gift cards table exists but access is restricted (RLS enabled)');
+          return true;
+        }
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error checking gift card tables:', error);
+      return false;
+    }
+  }
+
+  static async getBusinessGiftCards(businessId: string): Promise<DatabaseGiftCard[]> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    // Check if gift card tables exist first
+    const tablesExist = await this.checkGiftCardTablesExist();
+    if (!tablesExist) {
+      console.log('Gift card tables do not exist, returning empty array');
+      return [];
+    }
+    
+    const { data, error } = await supabase
+      .from('gift_cards')
+      .select('*')
+      .eq('business_id', businessId)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching gift cards:', error);
+      return [];
+    }
+    return data || [];
+  }
+
+  // Get business by ID
+  static async getBusinessById(businessId: string): Promise<DatabaseBusiness | null> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    const { data, error } = await supabase
+      .from('businesses')
+      .select('*')
+      .eq('id', businessId)
+      .maybeSingle();
+    
+    if (error) {
+      console.error('Error fetching business by ID:', error);
+      throw error;
+    }
+    
+    return data;
+  }
+
+  static async getBusinessByUserId(userId: string): Promise<DatabaseBusiness | null> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    console.log('Looking for business with owner_id:', userId);
+    
+    const { data, error } = await supabase
+      .from('businesses')
+      .select('*')
+      .eq('owner_id', userId)
+      .maybeSingle();
+    
+    if (error) {
+      console.error('Error fetching business by user ID:', error);
+      throw error;
+    }
+    
+    if (!data) {
+      console.log('No business found for user:', userId);
+      
+      // Check if user has an approved business application
+      const { data: approvedApplication, error: applicationError } = await supabase
+        .from('business_applications')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'approved')
+        .maybeSingle();
+      
+      if (applicationError) {
+        console.error('Error checking for approved application:', applicationError);
+        return null;
+      }
+      
+      if (approvedApplication) {
+        console.log('Found approved business application for user:', userId);
+        // Create a business record for this approved application
+        const businessData = {
+          application_id: approvedApplication.id,
+          business_name: approvedApplication.business_name,
+          category_id: approvedApplication.primary_category,
+          subcategory_id: approvedApplication.subcategories?.[0] || null,
+          description: approvedApplication.description,
+          logo: approvedApplication.logo || '',
+          banner_image: approvedApplication.business_photos?.[0] || '',
+          square_image: approvedApplication.business_photos?.[0] || '',
+          is_active: true,
+          is_verified: true,
+          verification_date: new Date().toISOString(),
+          verified_by: approvedApplication.reviewed_by,
+          owner_id: userId
+        };
+        
+        try {
+          const businessId = await this.createBusiness(businessData);
+          console.log('Created business record for approved application:', businessId);
+          
+          // Return the newly created business
+          const { data: newBusiness, error: newBusinessError } = await supabase
+            .from('businesses')
+            .select('*')
+            .eq('id', businessId)
+            .single();
+          
+          if (newBusinessError) {
+            console.error('Error fetching newly created business:', newBusinessError);
+            return null;
+          }
+          
+          return newBusiness;
+        } catch (createError) {
+          console.error('Error creating business record:', createError);
+          return null;
+        }
+      }
+      
+      return null;
+    }
+    
+    console.log('Found business:', data);
+    return data;
+  }
+
+  static async getBusinessStats(businessId: string): Promise<DatabaseBusinessStats> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+    
+    // Check if gift card tables exist first
+    const tablesExist = await this.checkGiftCardTablesExist();
+    if (!tablesExist) {
+      console.log('Gift card tables do not exist, returning default stats');
+      return {
+        totalCards: 0,
+        activeCards: 0,
+        totalSales: 0,
+        totalCustomers: 0
+      };
+    }
+    
+    try {
+      // Get total cards
+      const { data: cards, error: cardsError } = await supabase
+        .from('gift_cards')
+        .select('id, is_active')
+        .eq('business_id', businessId);
+      
+      if (cardsError) {
+        console.error('Error fetching cards for stats:', cardsError);
+        return {
+          totalCards: 0,
+          activeCards: 0,
+          totalSales: 0,
+          totalCustomers: 0
+        };
+      }
+
+      // Get total sales
+      const { data: sales, error: salesError } = await supabase
+        .from('gift_card_purchases')
+        .select('purchase_amount')
+        .eq('business_id', businessId);
+      
+      if (salesError) {
+        console.error('Error fetching sales for stats:', salesError);
+        return {
+          totalCards: cards?.length || 0,
+          activeCards: cards?.filter(card => card.is_active).length || 0,
+          totalSales: 0,
+          totalCustomers: 0
+        };
+      }
+
+      // Get unique customers
+      const { data: customers, error: customersError } = await supabase
+        .from('gift_card_purchases')
+        .select('customer_id')
+        .eq('business_id', businessId);
+      
+      if (customersError) {
+        console.error('Error fetching customers for stats:', customersError);
+        return {
+          totalCards: cards?.length || 0,
+          activeCards: cards?.filter(card => card.is_active).length || 0,
+          totalSales: sales?.reduce((sum, sale) => sum + sale.purchase_amount, 0) || 0,
+          totalCustomers: 0
+        };
+      }
+
+      const totalCards = cards?.length || 0;
+      const activeCards = cards?.filter(card => card.is_active).length || 0;
+      const totalSales = sales?.reduce((sum, sale) => sum + sale.purchase_amount, 0) || 0;
+      const uniqueCustomers = new Set(customers?.map(c => c.customer_id) || []).size;
+
+      return {
+        totalCards,
+        activeCards,
+        totalSales,
+        totalCustomers: uniqueCustomers
+      };
+    } catch (error) {
+      console.error('Error calculating business stats:', error);
+      return {
+        totalCards: 0,
+        activeCards: 0,
+        totalSales: 0,
+        totalCustomers: 0
+      };
+    }
+  }
+
+  // Post-Purchase Registration System Methods
+
+  // Generate QR code and registration link for a business
+  static async generateBusinessRegistrationLink(businessId: string): Promise<DatabaseBusinessRegistrationLink> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    // Generate unique code
+    const uniqueCode = `BR_${businessId.slice(0, 8)}_${Date.now()}`;
+    
+    // Create registration link - use fallback if NEXT_PUBLIC_APP_URL is not set
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3002';
+    const registrationUrl = `${baseUrl}/register/business/${uniqueCode}`;
+    
+    // Generate QR code URL (we'll use a QR code service)
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(registrationUrl)}`;
+
+    const { data, error } = await supabase
+      .from('business_registration_links')
+      .insert({
+        business_id: businessId,
+        unique_code: uniqueCode,
+        qr_code_url: qrCodeUrl,
+        landing_page_url: registrationUrl,
+        is_active: true
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  // Get business registration link
+  static async getBusinessRegistrationLink(businessId: string): Promise<DatabaseBusinessRegistrationLink | null> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    const { data, error } = await supabase
+      .from('business_registration_links')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  // Get business registration link by unique code
+  static async getBusinessRegistrationLinkByCode(uniqueCode: string): Promise<DatabaseBusinessRegistrationLink | null> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    const { data, error } = await supabase
+      .from('business_registration_links')
+      .select('*')
+      .eq('unique_code', uniqueCode)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  // Register customer through business QR code
+  static async registerCustomerThroughBusiness(
+    businessId: string,
+    customerData: {
+      email: string;
+      name: string;
+      phone?: string;
+    },
+    purchaseAmount?: number,
+    purchaseDetails?: any
+  ): Promise<{ customer: DatabaseUser; registration: DatabaseCustomerRegistration; points: number }> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    // First, create or get the user
+    let user: DatabaseUser;
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', customerData.email)
+      .maybeSingle();
+
+    if (existingUser) {
+      user = existingUser;
+      // Update user to be business-specific if not already
+      if (user.customer_type !== 'business_specific' || !user.registering_business_id) {
+        await this.updateUser(user.id, {
+          customer_type: 'business_specific',
+          registering_business_id: businessId,
+          access_level: 'exclusive'
+        });
+        user.customer_type = 'business_specific';
+        user.registering_business_id = businessId;
+        user.access_level = 'exclusive';
+      }
+    } else {
+      // Create new user
+      const userData = {
+        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        email: customerData.email,
+        display_name: customerData.name,
+        phone_number: customerData.phone || undefined,
+        role: 'customer' as const,
+        customer_type: 'business_specific' as const,
+        registering_business_id: businessId,
+        access_level: 'exclusive' as const,
+        user_code: `USER_${Date.now()}`,
+        is_email_verified: false
+      };
+
+      await this.createUser(userData);
+      user = userData as DatabaseUser;
+    }
+
+    // Get business reward config
+    const rewardConfig = await this.getBusinessRewardConfig(businessId);
+    
+    // Calculate points
+    const pointsPerDollar = rewardConfig?.points_per_dollar || 1.0;
+    const welcomePoints = rewardConfig?.welcome_points || 0;
+    const basePoints = purchaseAmount ? Math.floor(purchaseAmount * pointsPerDollar) : 0;
+    const totalPoints = basePoints + welcomePoints;
+
+    // Create customer registration record
+    const { data: registration, error: registrationError } = await supabase
+      .from('customer_registrations')
+      .insert({
+        customer_id: user.id,
+        business_id: businessId,
+        registration_method: 'qr_code',
+        purchase_amount: purchaseAmount,
+        purchase_details: purchaseDetails,
+        points_awarded: totalPoints,
+        welcome_gift_awarded: welcomePoints > 0,
+        registration_data: customerData
+      })
+      .select('*')
+      .single();
+
+    if (registrationError) throw registrationError;
+
+    // Create or update customer points
+    await this.addCustomerPoints(user.id, businessId, totalPoints, `Registration reward for ${purchaseAmount ? `$${purchaseAmount} purchase` : 'new customer'}`);
+
+    return {
+      customer: user,
+      registration: registration,
+      points: totalPoints
+    };
+  }
+
+  // Get business reward config
+  static async getBusinessRewardConfig(businessId: string): Promise<DatabaseBusinessRewardConfig | null> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    const { data, error } = await supabase
+      .from('business_reward_configs')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  // Add points to customer
+  static async addCustomerPoints(customerId: string, businessId: string, points: number, description?: string): Promise<void> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    // Check if customer points record exists
+    const { data: existingPoints } = await supabase
+      .from('customer_points')
+      .select('*')
+      .eq('customer_id', customerId)
+      .eq('business_id', businessId)
+      .maybeSingle();
+
+    if (existingPoints) {
+      // Update existing points
+      const { error: updateError } = await supabase
+        .from('customer_points')
+        .update({
+          points: existingPoints.points + points,
+          total_earned: existingPoints.total_earned + points
+        })
+        .eq('customer_id', customerId)
+        .eq('business_id', businessId);
+
+      if (updateError) throw updateError;
+    } else {
+      // Create new points record
+      const { error: insertError } = await supabase
+        .from('customer_points')
+        .insert({
+          customer_id: customerId,
+          business_id: businessId,
+          points: points,
+          total_earned: points,
+          total_redeemed: 0
+        });
+
+      if (insertError) throw insertError;
+    }
+
+    // Create points transaction record
+    const { error: transactionError } = await supabase
+      .from('points_transactions')
+      .insert({
+        customer_id: customerId,
+        business_id: businessId,
+        transaction_type: 'earned',
+        points: points,
+        description: description || 'Points earned'
+      });
+
+    if (transactionError) throw transactionError;
+  }
+
+  // Get customer points
+  static async getCustomerPoints(customerId: string, businessId: string): Promise<DatabaseCustomerPoints | null> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    const { data, error } = await supabase
+      .from('customer_points')
+      .select('*')
+      .eq('customer_id', customerId)
+      .eq('business_id', businessId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  }
+
+  // Get customer registration history
+  static async getCustomerRegistrations(customerId: string): Promise<DatabaseCustomerRegistration[]> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    const { data, error } = await supabase
+      .from('customer_registrations')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  // Get business customer registrations
+  static async getBusinessCustomerRegistrations(businessId: string): Promise<DatabaseCustomerRegistration[]> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    const { data, error } = await supabase
+      .from('customer_registrations')
+      .select('*')
+      .eq('business_id', businessId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   }
 }
 

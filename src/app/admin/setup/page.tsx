@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { PostgreSQLService } from '@/lib/postgresql';
 
 export default function AdminSetupPage() {
   const { user } = useAuth();
@@ -37,6 +38,27 @@ export default function AdminSetupPage() {
 
     } catch (error) {
       console.error('Error making user admin:', error);
+      setMessage('❌ Error: ' + (error as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const syncUserRolesForApprovedBusinesses = async () => {
+    if (!user) {
+      setMessage('Please log in first');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMessage('Syncing user roles for approved businesses...');
+
+      await PostgreSQLService.syncUserRolesForApprovedBusinesses();
+
+      setMessage('✅ Success! User roles have been synced for all approved businesses.');
+    } catch (error) {
+      console.error('Error syncing user roles:', error);
       setMessage('❌ Error: ' + (error as Error).message);
     } finally {
       setLoading(false);
@@ -97,6 +119,24 @@ export default function AdminSetupPage() {
           >
             {loading ? 'Setting up...' : user.role === 'admin' ? 'Already Admin' : 'Make Me Admin'}
           </button>
+
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Database Maintenance</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Sync user roles for all approved business applications.
+            </p>
+            <button
+              onClick={syncUserRolesForApprovedBusinesses}
+              disabled={loading}
+              className={`w-full px-4 py-2 rounded-md text-white font-medium ${
+                loading
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-green-600 hover:bg-green-700'
+              }`}
+            >
+              {loading ? 'Syncing...' : 'Sync User Roles for Approved Businesses'}
+            </button>
+          </div>
 
           <div className="mt-4">
             <button

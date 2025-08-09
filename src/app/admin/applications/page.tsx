@@ -43,11 +43,42 @@ export default function AdminApplicationsPage() {
 
   const handleApprove = async (applicationId: string) => {
     try {
+      // First, get the application details to find the user_id
+      const application = applications.find(app => app.id === applicationId);
+      if (!application) {
+        throw new Error('Application not found');
+      }
+
+      // Update the business application status
       await PostgreSQLService.updateBusinessApplication(applicationId, {
         status: 'approved',
         reviewed_by: user?.uid,
         reviewed_at: new Date().toISOString()
       });
+
+      // Update the user's role to 'business'
+      await PostgreSQLService.updateUser(application.user_id, { role: 'business' });
+      
+      // Create a business record for the approved application
+      const businessData = {
+        application_id: applicationId,
+        business_name: application.business_name,
+        category_id: application.primary_category,
+        subcategory_id: application.subcategories?.[0] || null,
+        description: application.description,
+        logo: application.logo || '',
+        banner_image: application.business_photos?.[0] || '',
+        square_image: application.business_photos?.[0] || '',
+        is_active: true,
+        is_verified: true,
+        verification_date: new Date().toISOString(),
+        verified_by: user?.uid,
+        owner_id: application.user_id
+      };
+
+      await PostgreSQLService.createBusiness(businessData);
+      
+      console.log(`User ${application.user_id} role updated to 'business' and business record created for approved application ${applicationId}`);
       
       // Reload applications
       await loadApplications();

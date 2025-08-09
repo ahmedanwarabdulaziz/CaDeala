@@ -13,6 +13,7 @@ import {
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider, appleProvider } from '@/lib/firebase';
 import { AuthContextType, User, UserRole } from '@/types/auth';
+import { PostgreSQLService } from '@/lib/postgresql';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -30,40 +31,90 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Function to refresh user data from PostgreSQL
+  const refreshUserData = async (firebaseUser: FirebaseUser) => {
+    try {
+      // First, sync the user to PostgreSQL
+      await PostgreSQLService.syncCurrentUser(firebaseUser);
+      
+      // Get the updated user data from PostgreSQL
+      const postgresUser = await PostgreSQLService.getUser(firebaseUser.uid);
+      
+      if (postgresUser) {
+        // Check if user has an approved business and update role accordingly
+        const business = await PostgreSQLService.getBusinessByUserId(firebaseUser.uid);
+        if (business && postgresUser.role !== 'business') {
+          // Update the user's role to business
+          await PostgreSQLService.updateUser(firebaseUser.uid, { role: 'business' });
+          postgresUser.role = 'business';
+        }
+        
+        return postgresUser;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error refreshing user data:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
           console.log('Firebase user authenticated:', firebaseUser.uid);
-          // Get user data from Firestore
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            console.log('User data from Firestore:', userData);
+          
+          // Get user data from PostgreSQL (which includes the latest role)
+          const postgresUser = await refreshUserData(firebaseUser);
+          
+          if (postgresUser) {
             const userStateData: any = {
               uid: firebaseUser.uid,
               email: firebaseUser.email!,
-              displayName: firebaseUser.displayName || userData.displayName,
-              photoURL: firebaseUser.photoURL || userData.photoURL,
-              phoneNumber: firebaseUser.phoneNumber || userData.phoneNumber,
-              role: userData.role,
-              userCode: userData.userCode,
+              displayName: firebaseUser.displayName || postgresUser.display_name,
+              photoURL: firebaseUser.photoURL || postgresUser.photo_url,
+              phoneNumber: firebaseUser.phoneNumber || postgresUser.phone_number,
+              role: postgresUser.role,
+              userCode: postgresUser.user_code,
               isEmailVerified: firebaseUser.emailVerified,
-              createdAt: userData.createdAt.toDate(),
+              createdAt: postgresUser.created_at,
             };
             
             // Only include businessProfile if it exists
-            if (userData.businessProfile) {
-              userStateData.businessProfile = userData.businessProfile;
+            if (postgresUser.business_profile) {
+              userStateData.businessProfile = postgresUser.business_profile;
             }
             
             console.log('Setting user state with data:', userStateData);
-            console.log('Firebase user photoURL:', firebaseUser.photoURL);
-            console.log('Firestore userData photoURL:', userData.photoURL);
             setUser(userStateData);
           } else {
-            console.log('User document does not exist in Firestore');
-            setUser(null);
+            // Fallback to Firestore if PostgreSQL fails
+            const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              console.log('User data from Firestore:', userData);
+              const userStateData: any = {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email!,
+                displayName: firebaseUser.displayName || userData.displayName,
+                photoURL: firebaseUser.photoURL || userData.photoURL,
+                phoneNumber: firebaseUser.phoneNumber || userData.phoneNumber,
+                role: userData.role,
+                userCode: userData.userCode,
+                isEmailVerified: firebaseUser.emailVerified,
+                createdAt: userData.createdAt.toDate(),
+              };
+              
+              if (userData.businessProfile) {
+                userStateData.businessProfile = userData.businessProfile;
+              }
+              
+              setUser(userStateData);
+            } else {
+              console.log('User document does not exist in Firestore');
+              setUser(null);
+            }
           }
         } else {
           console.log('No Firebase user');
@@ -212,6 +263,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const refreshUser = async () => {
+    if (auth.currentUser) {
+      try {
+        console.log('Refreshing user data...');
+        // First, sync the user to PostgreSQL
+        await PostgreSQLService.syncCurrentUser(auth.currentUser);
+        
+        // Get the updated user data from PostgreSQL
+        const postgresUser = await PostgreSQLService.getUser(auth.currentUser.uid);
+        
+        if (postgresUser) {
+          // Check if user has an approved business and update role accordingly
+          const business = await PostgreSQLService.getBusinessByUserId(auth.currentUser.uid);
+          if (business && postgresUser.role !== 'business') {
+            console.log('Updating user role to business...');
+            // Update the user's role to business
+            await PostgreSQLService.updateUser(auth.currentUser.uid, { role: 'business' });
+            // Fetch the updated user data again
+            const updatedPostgresUser = await PostgreSQLService.getUser(auth.currentUser.uid);
+            if (updatedPostgresUser) {
+              postgresUser.role = updatedPostgresUser.role;
+              console.log('User role updated to:', updatedPostgresUser.role);
+            }
+          }
+          
+          const userStateData: any = {
+            uid: auth.currentUser.uid,
+            email: auth.currentUser.email!,
+            displayName: auth.currentUser.displayName || postgresUser.display_name,
+            photoURL: auth.currentUser.photoURL || postgresUser.photo_url,
+            phoneNumber: auth.currentUser.phoneNumber || postgresUser.phone_number,
+            role: postgresUser.role, // This should now be 'business' if updated
+            userCode: postgresUser.user_code,
+            isEmailVerified: auth.currentUser.emailVerified,
+            createdAt: postgresUser.created_at,
+          };
+          
+          if (postgresUser.business_profile) {
+            userStateData.businessProfile = postgresUser.business_profile;
+          }
+          
+          console.log('Refreshed user data:', userStateData);
+          setUser(userStateData);
+          
+          // Force a re-render by updating the state again
+          setTimeout(() => {
+            console.log('Forcing re-render with updated user data:', userStateData);
+            setUser({ ...userStateData });
+          }, 100);
+        }
+      } catch (error) {
+        console.error('Error refreshing user data:', error);
+      }
+    }
+  };
+
   const value: AuthContextType = {
     user,
     loading,
@@ -220,7 +327,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signInWithApple,
     signUp,
     signOut,
-    resetPassword
+    resetPassword,
+    refreshUser
   };
 
   return (

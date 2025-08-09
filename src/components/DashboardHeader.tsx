@@ -2,10 +2,19 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 export default function DashboardHeader() {
   const { user, signOut } = useAuth();
   const router = useRouter();
+  const [currentRole, setCurrentRole] = useState<string>('');
+
+  useEffect(() => {
+    if (user) {
+      console.log('DashboardHeader: User role changed to:', user.role);
+      setCurrentRole(user.role);
+    }
+  }, [user?.role]);
 
   const handleSignOut = async () => {
     try {
@@ -21,7 +30,9 @@ export default function DashboardHeader() {
   console.log('DashboardHeader user data:', {
     photoURL: user.photoURL,
     displayName: user.displayName,
-    email: user.email
+    email: user.email,
+    role: user.role,
+    currentRole: currentRole
   });
 
   return (
