@@ -1,5 +1,5 @@
 // ImgBB API configuration
-const IMGBB_API_KEY = 'f47e8ffa81cf4ab42baace21c8bd3e37';
+const IMGBB_API_KEY = process.env.NEXT_PUBLIC_IMGBB_API_KEY || 'f47e8ffa81cf4ab42baace21c8bd3e37';
 const IMGBB_UPLOAD_URL = 'https://api.imgbb.com/1/upload';
 
 export class FileUploadService {
@@ -21,18 +21,29 @@ export class FileUploadService {
 
       const response = await fetch(IMGBB_UPLOAD_URL, {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers: {
+          // Don't set Content-Type header for FormData
+        }
       });
 
       if (!response.ok) {
-        throw new Error('Failed to upload file');
+        const errorText = await response.text();
+        console.error('ImgBB upload failed:', response.status, errorText);
+        throw new Error(`Failed to upload file: ${response.status} ${errorText}`);
       }
 
       const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error?.message || 'Upload failed');
+      }
+      
       return data.data.url;
     } catch (error) {
       console.error('Error uploading file:', error);
-      throw new Error('Failed to upload file');
+      // Return a placeholder URL or throw a more specific error
+      throw new Error(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

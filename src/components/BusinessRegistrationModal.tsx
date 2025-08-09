@@ -391,7 +391,7 @@ export default function BusinessRegistrationModal({ isOpen, onClose }: BusinessR
         // Continue with application submission even if user sync fails
       }
       
-      // Upload files first
+      // Upload files first (make it optional)
       const uploadedData: any = { ...formData };
       let totalUploads = 0;
       let completedUploads = 0;
@@ -403,53 +403,73 @@ export default function BusinessRegistrationModal({ isOpen, onClose }: BusinessR
       if (formData.businessPhotos.length > 0) totalUploads += formData.businessPhotos.length;
       if (formData.logo) totalUploads++;
       
-      // Upload documents
+      // Upload documents (optional - continue even if upload fails)
       if (formData.documents.registrationCertificate || 
           formData.documents.businessLicense || 
           formData.documents.taxCertificate) {
-        setUploadProgress(10);
-        const documentUrls = await FileUploadService.uploadBusinessDocuments(
-          formData.documents,
-          user.uid
-        );
-        // Convert camelCase to snake_case for PostgreSQL
-        uploadedData.documents = {
-          registration_certificate: documentUrls.registrationCertificate,
-          business_license: documentUrls.businessLicense,
-          tax_certificate: documentUrls.taxCertificate
-        };
-        completedUploads += Object.keys(documentUrls).length;
-        setUploadProgress((completedUploads / totalUploads) * 100);
+        try {
+          setUploadProgress(10);
+          const documentUrls = await FileUploadService.uploadBusinessDocuments(
+            formData.documents,
+            user.uid
+          );
+          // Convert camelCase to snake_case for PostgreSQL
+          uploadedData.documents = {
+            registration_certificate: documentUrls.registrationCertificate,
+            business_license: documentUrls.businessLicense,
+            tax_certificate: documentUrls.taxCertificate
+          };
+          completedUploads += Object.keys(documentUrls).length;
+          setUploadProgress((completedUploads / totalUploads) * 100);
+        } catch (uploadError) {
+          console.warn('Failed to upload documents:', uploadError);
+          // Continue without documents
+          uploadedData.documents = {};
+        }
       }
       
-      // Upload business photos
+      // Upload business photos (optional)
       if (formData.businessPhotos.length > 0) {
-        setUploadProgress(40);
-        const photoUrls = await FileUploadService.uploadBusinessPhotos(
-          formData.businessPhotos,
-          user.uid
-        );
-        uploadedData.businessPhotos = photoUrls;
-        completedUploads += formData.businessPhotos.length;
-        setUploadProgress((completedUploads / totalUploads) * 100);
+        try {
+          setUploadProgress(40);
+          const photoUrls = await FileUploadService.uploadBusinessPhotos(
+            formData.businessPhotos,
+            user.uid
+          );
+          uploadedData.businessPhotos = photoUrls;
+          completedUploads += formData.businessPhotos.length;
+          setUploadProgress((completedUploads / totalUploads) * 100);
+        } catch (uploadError) {
+          console.warn('Failed to upload business photos:', uploadError);
+          // Continue without photos
+          uploadedData.businessPhotos = [];
+        }
       }
       
-      // Upload logo
+      // Upload logo (optional)
       if (formData.logo) {
-        setUploadProgress(80);
-        const logoUrl = await FileUploadService.uploadBusinessLogo(
-          formData.logo,
-          user.uid
-        );
-        uploadedData.logo = logoUrl;
-        completedUploads++;
-        setUploadProgress((completedUploads / totalUploads) * 100);
+        try {
+          setUploadProgress(80);
+          const logoUrl = await FileUploadService.uploadBusinessLogo(
+            formData.logo,
+            user.uid
+          );
+          uploadedData.logo = logoUrl;
+          completedUploads++;
+          setUploadProgress((completedUploads / totalUploads) * 100);
+        } catch (uploadError) {
+          console.warn('Failed to upload logo:', uploadError);
+          // Continue without logo
+          uploadedData.logo = '';
+        }
       }
       
       // Remove File objects from the data before saving to PostgreSQL
-      delete uploadedData.documents.registrationCertificate;
-      delete uploadedData.documents.businessLicense;
-      delete uploadedData.documents.taxCertificate;
+      if (uploadedData.documents) {
+        delete uploadedData.documents.registrationCertificate;
+        delete uploadedData.documents.businessLicense;
+        delete uploadedData.documents.taxCertificate;
+      }
       
       setUploadProgress(90);
       
@@ -488,10 +508,10 @@ export default function BusinessRegistrationModal({ isOpen, onClose }: BusinessR
         specializations: uploadedData.specializations,
         license_number: uploadedData.licenseNumber,
         tax_id: uploadedData.taxId,
-        documents: uploadedData.documents,
+        documents: uploadedData.documents || {},
         social_media: uploadedData.socialMedia,
-        business_photos: uploadedData.businessPhotos,
-        logo: uploadedData.logo,
+        business_photos: uploadedData.businessPhotos || [],
+        logo: uploadedData.logo || '',
         terms_accepted: uploadedData.termsAccepted,
         privacy_accepted: uploadedData.privacyAccepted,
         data_consent_accepted: uploadedData.dataConsentAccepted,
@@ -505,7 +525,7 @@ export default function BusinessRegistrationModal({ isOpen, onClose }: BusinessR
       router.push('/business-registration/success');
     } catch (error) {
       console.error('Error submitting application:', error);
-      alert('Error submitting application. Please try again.');
+      alert('Error submitting application. Please try again. If the problem persists, please contact support.');
     } finally {
       setLoading(false);
       setUploading(false);
