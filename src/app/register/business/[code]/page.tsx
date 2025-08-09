@@ -86,9 +86,9 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
       console.log('Registration successful:', result);
       setSuccess(true);
       
-      // Redirect to success page or show success message
+      // Redirect to customer page instead of success page
       setTimeout(() => {
-        router.push(`/registration-success?points=${result.points}&business=${business.business_name}`);
+        router.push('/customer');
       }, 2000);
 
     } catch (error) {

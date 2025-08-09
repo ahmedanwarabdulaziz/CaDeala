@@ -27,6 +27,7 @@ export default function BusinessDashboard() {
   const [business, setBusiness] = useState<any>(null);
   const [giftCards, setGiftCards] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalCards: 0,
     activeCards: 0,
@@ -69,6 +70,11 @@ export default function BusinessDashboard() {
         const servicesData = await PostgreSQLService.getBusinessServices(businessData.id);
         console.log('Services loaded:', servicesData);
         setServices(servicesData || []);
+
+        // Load customers
+        const customersData = await PostgreSQLService.getBusinessCustomers(businessData.id);
+        console.log('Customers loaded:', customersData);
+        setCustomers(customersData || []);
 
         // Load stats
         const statsData = await PostgreSQLService.getBusinessStats(businessData.id);
@@ -320,6 +326,82 @@ export default function BusinessDashboard() {
                   <p className="text-gray-500">2 days ago</p>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Customers Section - Full Width */}
+        <div className="mt-8">
+          <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-medium text-gray-900">Registered Customers</h3>
+                <span className="text-sm text-gray-500">{customers.length} customers</span>
+              </div>
+            </div>
+            <div className="p-6">
+              {customers.length === 0 ? (
+                <div className="text-center py-8">
+                  <UsersIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Customers Yet</h3>
+                  <p className="text-gray-600 mb-4">Customers will appear here when they register through your QR code or link.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {customers.slice(0, 12).map((customerData) => (
+                    <div key={customerData.registration.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <span className="text-blue-600 font-semibold">
+                            {customerData.customer.display_name?.charAt(0) || customerData.customer.email.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-medium text-gray-900">
+                            {customerData.customer.display_name || 'Unknown Customer'}
+                          </h4>
+                          <p className="text-sm text-gray-600">{customerData.customer.email}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {customerData.customer.phone_number && (
+                          <p className="text-sm text-gray-500">{customerData.customer.phone_number}</p>
+                        )}
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-blue-600">
+                            {customerData.points?.points || 0} Points
+                          </span>
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            customerData.registration.welcome_gift_awarded 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {customerData.registration.welcome_gift_awarded ? 'Welcome Gift Given' : 'New Customer'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Registered: {new Date(customerData.registration.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="mt-3 flex space-x-2">
+                        <button className="flex-1 text-blue-600 hover:text-blue-800 text-sm font-medium">
+                          View Details
+                        </button>
+                        <button className="flex-1 text-green-600 hover:text-green-800 text-sm font-medium">
+                          Add Points
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {customers.length > 12 && (
+                <div className="text-center pt-6">
+                  <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                    View All {customers.length} Customers
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

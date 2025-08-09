@@ -1453,6 +1453,38 @@ export class PostgreSQLService {
     if (error) throw error;
     return data || [];
   }
+
+  // Get business customers with details and points
+  static async getBusinessCustomers(businessId: string): Promise<Array<{
+    customer: DatabaseUser;
+    registration: DatabaseCustomerRegistration;
+    points: DatabaseCustomerPoints | null;
+  }>> {
+    if (!supabase) {
+      throw new Error('Supabase client not initialized. Check environment variables.');
+    }
+
+    // Get all customer registrations for this business
+    const registrations = await this.getBusinessCustomerRegistrations(businessId);
+    
+    const customersWithDetails = await Promise.all(
+      registrations.map(async (registration) => {
+        // Get customer details
+        const customer = await this.getUser(registration.customer_id);
+        
+        // Get customer points
+        const points = await this.getCustomerPoints(registration.customer_id, businessId);
+        
+        return {
+          customer: customer!,
+          registration,
+          points
+        };
+      })
+    );
+
+    return customersWithDetails.filter(item => item.customer !== null);
+  }
 }
 
 export default supabase;
