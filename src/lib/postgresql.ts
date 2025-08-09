@@ -219,8 +219,6 @@ export interface DatabaseCustomerPoints {
   customer_id: string;
   business_id: string;
   points: number;
-  total_earned: number;
-  total_redeemed: number;
   created_at: string;
   updated_at: string;
 }
@@ -1332,8 +1330,7 @@ export class PostgreSQLService {
       const { error: updateError } = await supabase
         .from('customer_points')
         .update({
-          points: existingPoints.points + points,
-          total_earned: existingPoints.total_earned + points
+          points: existingPoints.points + points
         })
         .eq('customer_id', customerId)
         .eq('business_id', businessId);
@@ -1346,9 +1343,7 @@ export class PostgreSQLService {
         .insert({
           customer_id: customerId,
           business_id: businessId,
-          points: points,
-          total_earned: points,
-          total_redeemed: 0
+          points: points
         });
 
       if (insertError) throw insertError;
