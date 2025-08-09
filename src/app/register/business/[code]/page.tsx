@@ -83,14 +83,17 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
         }
       );
 
-      console.log('Registration successful:', result);
+      console.log('Registration result:', result);
+      console.log('Is existing customer:', result.isExisting);
       
       if (result.isExisting) {
+        console.log('Customer already exists, showing error message');
         setError('This email is already registered with this business. Please use a different email or contact the business owner.');
         setSubmitting(false);
         return;
       }
 
+      console.log('Registration successful, setting success state');
       setSuccess(true);
       
       // Redirect to customer page instead of success page

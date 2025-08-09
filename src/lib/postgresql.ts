@@ -1219,8 +1219,10 @@ export class PostgreSQLService {
 
     console.log('Starting registration process for:', customerData.email, 'business:', businessId);
 
-    // First, create or get the user
+    // First, check if user already exists
     let user: DatabaseUser;
+    let isExistingUser = false;
+    
     try {
       const { data: existingUser, error: userError } = await supabase
         .from('users')
@@ -1236,6 +1238,7 @@ export class PostgreSQLService {
       if (existingUser) {
         console.log('Found existing user:', existingUser.id);
         user = existingUser;
+        isExistingUser = true;
         
         // Check if user is already registered with this business
         const { data: existingRegistration } = await supabase
@@ -1354,7 +1357,7 @@ export class PostgreSQLService {
       customer: user,
       registration: registration,
       points: totalPoints,
-      isExisting: false
+      isExisting: isExistingUser
     };
   }
 
@@ -1413,26 +1416,9 @@ export class PostgreSQLService {
       if (insertError) throw insertError;
     }
 
-    // Create points transaction record (optional - don't fail if table doesn't exist)
-    try {
-      const { error: transactionError } = await supabase
-        .from('points_transactions')
-        .insert({
-          customer_id: customerId,
-          business_id: businessId,
-          transaction_type: 'earned',
-          points: points,
-          description: description || 'Points earned'
-        });
-
-      if (transactionError) {
-        console.error('Error creating points transaction (non-critical):', transactionError);
-        // Don't throw here as points were already added to customer_points
-      }
-    } catch (error) {
-      console.error('Error creating points transaction (non-critical):', error);
-      // Don't throw here as points were already added to customer_points
-    }
+    // Skip points_transactions creation entirely for now - it's causing issues
+    // TODO: Fix points_transactions table schema if needed
+    console.log('Skipping points_transactions creation to avoid schema issues');
   }
 
   // Get customer points
