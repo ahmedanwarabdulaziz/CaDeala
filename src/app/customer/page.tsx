@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PostgreSQLService } from '@/lib/postgresql';
+import BusinessRegistrationModal from '@/components/BusinessRegistrationModal';
 import {
   UserIcon,
   ClockIcon,
@@ -15,6 +16,7 @@ export default function CustomerPage() {
   const { user } = useAuth();
   const [application, setApplication] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showBusinessModal, setShowBusinessModal] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -59,9 +61,14 @@ export default function CustomerPage() {
               <p className="text-gray-600">Customer Dashboard</p>
             </div>
             <div className="flex items-center space-x-4">
-              <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-                Upgrade to Business
-              </button>
+              {!application && (
+                <button 
+                  onClick={() => setShowBusinessModal(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                >
+                  Upgrade to Business
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -155,7 +162,10 @@ export default function CustomerPage() {
                 <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">
                   Browse Gift Cards
                 </button>
-                <button className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700">
+                <button 
+                  onClick={() => setShowBusinessModal(true)}
+                  className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700"
+                >
                   Upgrade to Business
                 </button>
               </div>
@@ -190,6 +200,12 @@ export default function CustomerPage() {
           </div>
         </div>
       </div>
+
+      {/* Business Registration Modal */}
+      <BusinessRegistrationModal 
+        isOpen={showBusinessModal}
+        onClose={() => setShowBusinessModal(false)}
+      />
     </div>
   );
 } 

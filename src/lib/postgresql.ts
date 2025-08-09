@@ -606,13 +606,9 @@ export class PostgreSQLService {
       .eq('user_id', userId)
       .order('applied_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        // No rows returned
-        return null;
-      }
       console.error('Error fetching user application:', error);
       throw new Error('Failed to fetch user application');
     }
@@ -1145,7 +1141,7 @@ export class PostgreSQLService {
     const uniqueCode = `BR_${businessId.slice(0, 8)}_${Date.now()}`;
     
     // Create registration link - use fallback if NEXT_PUBLIC_APP_URL is not set
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3002';
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cadeala.vercel.app';
     const registrationUrl = `${baseUrl}/register/business/${uniqueCode}`;
     
     // Generate QR code URL (we'll use a QR code service)
