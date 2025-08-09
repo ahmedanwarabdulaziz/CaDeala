@@ -1212,7 +1212,7 @@ export class PostgreSQLService {
     },
     purchaseAmount?: number,
     purchaseDetails?: any
-  ): Promise<{ customer: DatabaseUser; registration: DatabaseCustomerRegistration; points: number }> {
+  ): Promise<{ customer: DatabaseUser; registration: DatabaseCustomerRegistration; points: number; isExisting?: boolean }> {
     if (!supabase) {
       throw new Error('Supabase client not initialized. Check environment variables.');
     }
@@ -1252,7 +1252,8 @@ export class PostgreSQLService {
           return {
             customer: user,
             registration: existingRegistration,
-            points: points?.points || 0
+            points: points?.points || 0,
+            isExisting: true
           };
         }
 
@@ -1352,7 +1353,8 @@ export class PostgreSQLService {
     return {
       customer: user,
       registration: registration,
-      points: totalPoints
+      points: totalPoints,
+      isExisting: false
     };
   }
 
@@ -1411,18 +1413,26 @@ export class PostgreSQLService {
       if (insertError) throw insertError;
     }
 
-    // Create points transaction record
-    const { error: transactionError } = await supabase
-      .from('points_transactions')
-      .insert({
-        customer_id: customerId,
-        business_id: businessId,
-        transaction_type: 'earned',
-        points: points,
-        description: description || 'Points earned'
-      });
+    // Create points transaction record (optional - don't fail if table doesn't exist)
+    try {
+      const { error: transactionError } = await supabase
+        .from('points_transactions')
+        .insert({
+          customer_id: customerId,
+          business_id: businessId,
+          transaction_type: 'earned',
+          points: points,
+          description: description || 'Points earned'
+        });
 
-    if (transactionError) throw transactionError;
+      if (transactionError) {
+        console.error('Error creating points transaction (non-critical):', transactionError);
+        // Don't throw here as points were already added to customer_points
+      }
+    } catch (error) {
+      console.error('Error creating points transaction (non-critical):', error);
+      // Don't throw here as points were already added to customer_points
+    }
   }
 
   // Get customer points
