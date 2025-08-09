@@ -6,6 +6,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_type VARCHAR(20) DEFAULT 'pu
 ALTER TABLE users ADD COLUMN IF NOT EXISTS registering_business_id UUID REFERENCES businesses(id);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS access_level VARCHAR(20) DEFAULT 'exclusive' CHECK (access_level IN ('exclusive', 'cross_business', 'public'));
 
+-- 1.1. Add unique constraint for email field (if not exists)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'users_email_unique'
+    ) THEN
+        ALTER TABLE users ADD CONSTRAINT users_email_unique UNIQUE (email);
+    END IF;
+END $$;
+
 -- 2. Create customer_registrations table
 CREATE TABLE IF NOT EXISTS customer_registrations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -18,7 +29,8 @@ CREATE TABLE IF NOT EXISTS customer_registrations (
   welcome_gift_awarded BOOLEAN DEFAULT false,
   registration_data JSONB,
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(customer_id, business_id)
 );
 
 -- 3. Create business_registration_links table

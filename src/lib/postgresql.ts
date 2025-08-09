@@ -1236,6 +1236,26 @@ export class PostgreSQLService {
       if (existingUser) {
         console.log('Found existing user:', existingUser.id);
         user = existingUser;
+        
+        // Check if user is already registered with this business
+        const { data: existingRegistration } = await supabase
+          .from('customer_registrations')
+          .select('*')
+          .eq('customer_id', user.id)
+          .eq('business_id', businessId)
+          .maybeSingle();
+
+        if (existingRegistration) {
+          console.log('Customer already registered with this business:', existingRegistration.id);
+          // Return existing registration with updated points if needed
+          const points = await this.getCustomerPoints(user.id, businessId);
+          return {
+            customer: user,
+            registration: existingRegistration,
+            points: points?.points || 0
+          };
+        }
+
         // Update user to be business-specific if not already
         if (user.customer_type !== 'business_specific' || !user.registering_business_id) {
           console.log('Updating user to business-specific');
