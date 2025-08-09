@@ -23,6 +23,7 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
     phone: ''
   });
   const [error, setError] = useState('');
+  const [linkError, setLinkError] = useState('');
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
@@ -39,7 +40,7 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
       
       if (!link) {
         console.log('No registration link found for code:', params.code);
-        setError('Invalid registration link');
+        setLinkError('Invalid registration link');
         return;
       }
 
@@ -54,11 +55,11 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
         setBusiness(businessData);
       } else {
         console.log('No business found for ID:', link.business_id);
-        setError('Business not found');
+        setLinkError('Business not found');
       }
     } catch (error) {
       console.error('Error loading business info:', error);
-      setError(`Error loading business information: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setLinkError(`Error loading business information: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -71,7 +72,7 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
 
     try {
       setSubmitting(true);
-      setError('');
+      setError(''); // Clear any previous errors
       console.log('Submitting registration for:', formData);
 
       const result = await PostgreSQLService.registerCustomerThroughBusiness(
@@ -111,6 +112,11 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Clear error when user starts typing
+    if (error) {
+      setError('');
+    }
+    
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -128,13 +134,14 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
     );
   }
 
-  if (error || !registrationLink || !business) {
+  // Show separate error page only for link/business errors
+  if (linkError || !registrationLink || !business) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <QrCodeIcon className="w-12 h-12 text-red-400 mx-auto mb-4" />
           <h1 className="text-xl font-semibold text-gray-900 mb-2">Invalid Registration Link</h1>
-          <p className="text-gray-600">{error || 'This registration link is not valid or has expired.'}</p>
+          <p className="text-gray-600">{linkError || 'This registration link is not valid or has expired.'}</p>
         </div>
       </div>
     );
