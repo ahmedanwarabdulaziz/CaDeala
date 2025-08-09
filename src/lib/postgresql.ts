@@ -1217,75 +1217,117 @@ export class PostgreSQLService {
       throw new Error('Supabase client not initialized. Check environment variables.');
     }
 
+    console.log('Starting registration process for:', customerData.email, 'business:', businessId);
+
     // First, create or get the user
     let user: DatabaseUser;
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', customerData.email)
-      .maybeSingle();
+    try {
+      const { data: existingUser, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', customerData.email)
+        .maybeSingle();
 
-    if (existingUser) {
-      user = existingUser;
-      // Update user to be business-specific if not already
-      if (user.customer_type !== 'business_specific' || !user.registering_business_id) {
-        await this.updateUser(user.id, {
-          customer_type: 'business_specific',
-          registering_business_id: businessId,
-          access_level: 'exclusive'
-        });
-        user.customer_type = 'business_specific';
-        user.registering_business_id = businessId;
-        user.access_level = 'exclusive';
+      if (userError) {
+        console.error('Error checking existing user:', userError);
+        throw userError;
       }
-    } else {
-      // Create new user
-      const userData = {
-        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        email: customerData.email,
-        display_name: customerData.name,
-        phone_number: customerData.phone || undefined,
-        role: 'customer' as const,
-        customer_type: 'business_specific' as const,
-        registering_business_id: businessId,
-        access_level: 'exclusive' as const,
-        user_code: `USER_${Date.now()}`,
-        is_email_verified: false
-      };
 
-      await this.createUser(userData);
-      user = userData as DatabaseUser;
+      if (existingUser) {
+        console.log('Found existing user:', existingUser.id);
+        user = existingUser;
+        // Update user to be business-specific if not already
+        if (user.customer_type !== 'business_specific' || !user.registering_business_id) {
+          console.log('Updating user to business-specific');
+          await this.updateUser(user.id, {
+            customer_type: 'business_specific',
+            registering_business_id: businessId,
+            access_level: 'exclusive'
+          });
+          user.customer_type = 'business_specific';
+          user.registering_business_id = businessId;
+          user.access_level = 'exclusive';
+        }
+      } else {
+        console.log('Creating new user');
+        // Create new user
+        const userData = {
+          id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          email: customerData.email,
+          display_name: customerData.name,
+          phone_number: customerData.phone || undefined,
+          role: 'customer' as const,
+          customer_type: 'business_specific' as const,
+          registering_business_id: businessId,
+          access_level: 'exclusive' as const,
+          user_code: `USER_${Date.now()}`,
+          is_email_verified: false
+        };
+
+        await this.createUser(userData);
+        user = userData as DatabaseUser;
+        console.log('Created new user:', user.id);
+      }
+    } catch (error) {
+      console.error('Error in user creation/retrieval:', error);
+      throw error;
     }
 
     // Get business reward config
-    const rewardConfig = await this.getBusinessRewardConfig(businessId);
+    let rewardConfig;
+    try {
+      rewardConfig = await this.getBusinessRewardConfig(businessId);
+      console.log('Reward config:', rewardConfig);
+    } catch (error) {
+      console.error('Error getting reward config:', error);
+      // Continue with default values
+      rewardConfig = null;
+    }
     
     // Calculate points
     const pointsPerDollar = rewardConfig?.points_per_dollar || 1.0;
     const welcomePoints = rewardConfig?.welcome_points || 0;
     const basePoints = purchaseAmount ? Math.floor(purchaseAmount * pointsPerDollar) : 0;
     const totalPoints = basePoints + welcomePoints;
+    console.log('Calculated points:', totalPoints);
 
     // Create customer registration record
-    const { data: registration, error: registrationError } = await supabase
-      .from('customer_registrations')
-      .insert({
-        customer_id: user.id,
-        business_id: businessId,
-        registration_method: 'qr_code',
-        purchase_amount: purchaseAmount,
-        purchase_details: purchaseDetails,
-        points_awarded: totalPoints,
-        welcome_gift_awarded: welcomePoints > 0,
-        registration_data: customerData
-      })
-      .select('*')
-      .single();
+    let registration;
+    try {
+      const { data: registrationData, error: registrationError } = await supabase
+        .from('customer_registrations')
+        .insert({
+          customer_id: user.id,
+          business_id: businessId,
+          registration_method: 'qr_code',
+          purchase_amount: purchaseAmount,
+          purchase_details: purchaseDetails,
+          points_awarded: totalPoints,
+          welcome_gift_awarded: welcomePoints > 0,
+          registration_data: customerData
+        })
+        .select('*')
+        .single();
 
-    if (registrationError) throw registrationError;
+      if (registrationError) {
+        console.error('Error creating registration:', registrationError);
+        throw registrationError;
+      }
+      registration = registrationData;
+      console.log('Created registration:', registration.id);
+    } catch (error) {
+      console.error('Error in registration creation:', error);
+      throw error;
+    }
 
     // Create or update customer points
-    await this.addCustomerPoints(user.id, businessId, totalPoints, `Registration reward for ${purchaseAmount ? `$${purchaseAmount} purchase` : 'new customer'}`);
+    try {
+      await this.addCustomerPoints(user.id, businessId, totalPoints, `Registration reward for ${purchaseAmount ? `$${purchaseAmount} purchase` : 'new customer'}`);
+      console.log('Added customer points successfully');
+    } catch (error) {
+      console.error('Error adding customer points:', error);
+      // Don't throw here, as the registration was successful
+    }
 
     return {
       customer: user,

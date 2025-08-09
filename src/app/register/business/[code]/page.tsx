@@ -72,6 +72,7 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
     try {
       setSubmitting(true);
       setError('');
+      console.log('Submitting registration for:', formData);
 
       const result = await PostgreSQLService.registerCustomerThroughBusiness(
         business.id,
@@ -82,6 +83,7 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
         }
       );
 
+      console.log('Registration successful:', result);
       setSuccess(true);
       
       // Redirect to success page or show success message
@@ -91,7 +93,8 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
 
     } catch (error) {
       console.error('Error registering customer:', error);
-      setError('Error registering. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setError(`Error registering. Please try again. Details: ${errorMessage}`);
     } finally {
       setSubmitting(false);
     }
