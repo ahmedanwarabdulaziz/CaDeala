@@ -24,17 +24,21 @@ export default function TestTables() {
 
     for (const table of tables) {
       try {
+        console.log(`Checking table: ${table}`);
         const { data, error } = await supabase
           .from(table)
           .select('id')
           .limit(1);
         
         if (error) {
+          console.error(`Error checking ${table}:`, error);
           results[table] = { exists: false, error: error.message };
         } else {
+          console.log(`Table ${table} exists, count:`, data?.length || 0);
           results[table] = { exists: true, count: data?.length || 0 };
         }
       } catch (err: any) {
+        console.error(`Exception checking ${table}:`, err);
         results[table] = { exists: false, error: err.message };
       }
     }

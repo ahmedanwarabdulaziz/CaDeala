@@ -32,9 +32,13 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
   const loadBusinessInfo = async () => {
     try {
       setLoading(true);
+      console.log('Loading business info for code:', params.code);
+      
       const link = await PostgreSQLService.getBusinessRegistrationLinkByCode(params.code);
+      console.log('Registration link result:', link);
       
       if (!link) {
+        console.log('No registration link found for code:', params.code);
         setError('Invalid registration link');
         return;
       }
@@ -42,15 +46,19 @@ export default function BusinessRegistrationPage({ params }: BusinessRegistratio
       setRegistrationLink(link);
       
       // Get business information by ID
+      console.log('Getting business info for ID:', link.business_id);
       const businessData = await PostgreSQLService.getBusinessById(link.business_id);
+      console.log('Business data result:', businessData);
+      
       if (businessData) {
         setBusiness(businessData);
       } else {
+        console.log('No business found for ID:', link.business_id);
         setError('Business not found');
       }
     } catch (error) {
       console.error('Error loading business info:', error);
-      setError('Error loading business information');
+      setError(`Error loading business information: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }

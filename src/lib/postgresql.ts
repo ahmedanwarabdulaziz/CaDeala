@@ -1186,6 +1186,8 @@ export class PostgreSQLService {
       throw new Error('Supabase client not initialized. Check environment variables.');
     }
 
+    console.log('Looking for registration link with code:', uniqueCode);
+
     const { data, error } = await supabase
       .from('business_registration_links')
       .select('*')
@@ -1193,7 +1195,12 @@ export class PostgreSQLService {
       .eq('is_active', true)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching registration link:', error);
+      throw error;
+    }
+
+    console.log('Registration link result:', data);
     return data;
   }
 
